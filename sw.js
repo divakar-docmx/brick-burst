@@ -1,6 +1,6 @@
 // Offline support: caches the game files so it runs without a connection.
 // Bump VERSION whenever any file changes so installed copies pick up the update.
-const VERSION = 'brick-burst-v4';
+const VERSION = 'brick-burst-v5';
 const FILES = [
   './',
   './index.html',

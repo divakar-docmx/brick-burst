@@ -26,6 +26,10 @@
                    box-sizing: border-box; background: #1c1c1c; border: 1px solid #333; border-radius: 12px; }
   #levels header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   #levels h2 { margin: 0; font-size: 18px; }
+  #levels .actions { display: flex; gap: 8px; }
+  #levels .fs { background: #2c2c2c; color: #e9e9e9; border: 0; border-radius: 8px; height: 36px; padding: 0 12px;
+                font: 600 13px system-ui, sans-serif; cursor: pointer; }
+  #levels.required .close { display: none; }
   #levels .close { background: #2c2c2c; color: #e9e9e9; border: 0; border-radius: 8px; width: 36px; height: 36px;
                    font-size: 20px; cursor: pointer; }
   #levels .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
@@ -43,9 +47,9 @@
 <canvas id="game"></canvas>
 <div id="levels" role="dialog" aria-modal="true" aria-labelledby="levels-title">
   <div class="panel">
-    <header><h2 id="levels-title">Choose a level</h2><button class="close" aria-label="Close">×</button></header>
+    <header><h2 id="levels-title">Choose a level</h2><div class="actions"><button class="fs" aria-label="Full screen">⛶ Full screen</button><button class="close" aria-label="Close">×</button></div></header>
     <div class="grid"></div>
-    <p class="note">Starting a level begins a new run: score 0, 3 lives.</p>
+    <p class="note">Pick any level. Starting a level begins a new run: score 0, 3 lives.</p>
   </div>
 </div>
 <script>
@@ -62,7 +66,7 @@
 
   const BALL_R = 4;
   const SPEED_LEVELS = [180, 240, 300, 360, 420, 480, 560, 640, 730, 820];
-  let speedLevel = 4;            // index into SPEED_LEVELS (shown as 1-10)
+  let speedLevel = 3;            // index into SPEED_LEVELS (shown as 1-10); default is level 4
   let ballSpeed = SPEED_LEVELS[speedLevel];
   const MAX_BALLS = 400;
 
@@ -269,8 +273,7 @@
       score = levelStartScore; lives = 3;
       startLevel(levelIndex);
     } else if (state === 'won') {
-      levelIndex = 0;
-      resetGame();
+      openPicker(true);
     }
   }
 
@@ -339,10 +342,12 @@
   const keys = {};
   window.addEventListener('keydown', e => {
     if (pickerOpen()) {
-      if (e.key === 'Escape' || e.key === 'l' || e.key === 'L') closePicker();
+      if (!pickerRequired() && (e.key === 'Escape' || e.key === 'l' || e.key === 'L')) closePicker();
+      if (e.key === 'f' || e.key === 'F') toggleFullscreen();
       return;
     }
     if (e.key === 'l' || e.key === 'L') { openPicker(); return; }
+    if (e.key === 'f' || e.key === 'F') { toggleFullscreen(); return; }
     keys[e.key] = true;
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); launch(); }
     if (e.key === 'p' || e.key === 'P') paused = !paused;
@@ -366,10 +371,10 @@
     speedLevel = next;
     ballSpeed = SPEED_LEVELS[next];
     for (const b of balls) { b.vx *= ratio; b.vy *= ratio; }
-    try { localStorage.setItem('brickburst-speed', speedLevel); } catch (e) {}
+    try { localStorage.setItem('brickburst-speed-v2', speedLevel); } catch (e) {}
   }
   try {
-    const saved = localStorage.getItem('brickburst-speed');
+    const saved = localStorage.getItem('brickburst-speed-v2');
     if (saved !== null) setSpeedLevel(+saved);
     speedFlash = 0;
   } catch (e) {}
@@ -387,9 +392,11 @@
     { id: 'pause',  label: () => paused ? '▶' : '❚❚', x: 14, y: HUD_Y + 36, w: 34, h: 20, act: () => { paused = !paused; } },
     { id: 'mute',   label: () => muted ? '🔇' : '🔊', x: W - 48, y: HUD_Y + 36, w: 34, h: 20, act: () => { muted = !muted; } },
     { id: 'levels', label: '☰ Levels', x: 56, y: HUD_Y + 36, w: 74, h: 20, act: () => openPicker() },
+    { id: 'fullscreen', label: '⛶', x: W - 88, y: HUD_Y + 36, w: 34, h: 20, act: () => toggleFullscreen(),
+      hidden: () => !fsSupported },
   ];
   function buttonAt(p) {
-    return BUTTONS.find(b => p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6);
+    return BUTTONS.find(b => !(b.hidden && b.hidden()) && p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6);
   }
 
   canvas.addEventListener('pointermove', e => {
@@ -431,8 +438,11 @@
   }
 
   const pickerOpen = () => picker.classList.contains('open');
-  function openPicker() {
+  // required = true when there's no game to go back to (startup, after the last level).
+  const pickerRequired = () => picker.classList.contains('required');
+  function openPicker(required = false) {
     if (state === 'play') paused = true;
+    picker.classList.toggle('required', required);
     pickerGrid.innerHTML = '';
     LEVELS.forEach((level, i) => {
       const tile = document.createElement('button');
@@ -459,7 +469,34 @@
   }
   function closePicker() { picker.classList.remove('open'); }
   picker.querySelector('.close').addEventListener('click', closePicker);
-  picker.addEventListener('click', e => { if (e.target === picker) closePicker(); });
+  picker.addEventListener('click', e => { if (e.target === picker && !pickerRequired()) closePicker(); });
+  picker.querySelector('.fs').addEventListener('click', toggleFullscreen);
+
+  // ---------- Full screen ----------
+  // Browsers that support it (Android, desktop, iPad). iPhone Safari doesn't, but the
+  // home-screen app already opens full screen there, so the button is hidden when unsupported.
+  const root = document.documentElement;
+  const fsSupported = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+  const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  function toggleFullscreen() {
+    if (!fsSupported) return;
+    if (isFullscreen()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const req = root.requestFullscreen ? root.requestFullscreen({ navigationUI: 'hide' }) : root.webkitRequestFullscreen();
+      Promise.resolve(req)
+        .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait'))
+        .catch(() => {});
+    }
+  }
+  function syncFsButton() {
+    const btn = picker.querySelector('.fs');
+    btn.hidden = !fsSupported;
+    btn.textContent = isFullscreen() ? '⛶ Exit full screen' : '⛶ Full screen';
+  }
+  document.addEventListener('fullscreenchange', syncFsButton);
+  document.addEventListener('webkitfullscreenchange', syncFsButton);
+  syncFsButton();
 
   // Pause automatically when the app is sent to the background.
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') paused = true; });
@@ -610,10 +647,11 @@
       ctx.fillRect(W / 2 - 4 + i * 7, hudY + 30 - bh, 5, bh);
     }
     ctx.fillStyle = COLORS.dim;
-    ctx.fillText('←/→ move · ↑/↓ speed · L levels', W / 2 + 40, hudY + 46);
+    ctx.fillText('←/→ move · ↑/↓ speed · L levels', W / 2 + 20, hudY + 46);
     // On-screen buttons
     ctx.font = 'bold 14px system-ui, sans-serif';
     for (const b of BUTTONS) {
+      if (b.hidden && b.hidden()) continue;
       ctx.fillStyle = '#2c2c2c';
       ctx.beginPath();
       ctx.roundRect ? ctx.roundRect(b.x, b.y, b.w, b.h, 5) : ctx.rect(b.x, b.y, b.w, b.h);
@@ -656,6 +694,7 @@
   }
 
   resetGame();
+  openPicker(true);          // always start on the level list
   requestAnimationFrame(frame);
 
   // Offline / installable support (only works when served over http(s), not file://).
