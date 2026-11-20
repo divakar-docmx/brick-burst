@@ -504,7 +504,9 @@
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-  const fsButtonHidden = () => isStandalone() && !isFullscreen();
+  // Inside the Android app the game is always full screen, so the button isn't needed.
+  const isNativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const fsButtonHidden = () => isNativeApp || (isStandalone() && !isFullscreen());
 
   const hint = document.getElementById('fshint');
   hint.querySelector('.ok').addEventListener('click', () => hint.classList.remove('open'));
@@ -742,7 +744,21 @@
   requestAnimationFrame(frame);
 
   // Offline / installable support (only works when served over http(s), not file://).
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  // Android app: the system Back button steps back game → paused → level list → exit.
+  // The level list is the app's home screen.
+  const AppPlugin = isNativeApp && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if (AppPlugin) {
+    AppPlugin.addListener('backButton', () => {
+      if (hint.classList.contains('open')) hint.classList.remove('open');
+      else if (pickerOpen()) AppPlugin.exitApp();
+      else if (state === 'play' && !paused) paused = true;
+      else openPicker();
+    });
+    AppPlugin.addListener('pause', () => { if (state === 'play') paused = true; });
+  }
+
+  // Website only (the Android app ships its files, so it doesn't need the offline cache).
+  if (!isNativeApp && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
 })();

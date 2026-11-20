@@ -1,0 +1,20 @@
+{
+  "name": "brick-burst",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Brick Burst – brick-breaker game (web + Android)",
+  "scripts": {
+    "build:web": "rm -rf www && mkdir -p www && cp -R index.html manifest.webmanifest sw.js icons www/",
+    "sync": "npm run build:web && npx cap sync android",
+    "apk:debug": "npm run sync && cd android && ./gradlew assembleDebug",
+    "aab:release": "npm run sync && cd android && ./gradlew bundleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}
